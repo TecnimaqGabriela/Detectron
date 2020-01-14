@@ -46,6 +46,10 @@ import detectron.datasets.dummy_datasets as dummy_datasets
 import detectron.utils.c2 as c2_utils
 import detectron.utils.vis as vis_utils
 
+import json
+
+from detectron.utils.vis import convert_from_cls_format
+
 c2_utils.import_detectron_ops()
 
 # OpenCL may be enabled by default in OpenCV3; disable it because it's not
@@ -135,15 +139,21 @@ def main(args):
     model = infer_engine.initialize_model_from_cfg(args.weights)
     dummy_coco_dataset = dummy_datasets.get_coco_dataset()
 
+    id_list = {}
     if os.path.isdir(args.im_or_folder):
         im_list = glob.iglob(args.im_or_folder + '/*.' + args.image_ext)
+
     else:
         im_list = [args.im_or_folder]
 
+    jsonboxes=[]
     for i, im_name in enumerate(im_list):
         out_name = os.path.join(
             args.output_dir, '{}'.format(os.path.basename(im_name) + '.' + args.output_ext)
         )
+        file_name=os.path.basename(im_name)
+        (image_name,ext)=os.path.splitext(os.path.basename(im_name))
+        print(image_name)
         logger.info('Processing {} -> {}'.format(im_name, out_name))
         im = cv2.imread(im_name)
         timers = defaultdict(Timer)
@@ -152,6 +162,23 @@ def main(args):
             cls_boxes, cls_segms, cls_keyps = infer_engine.im_detect_all(
                 model, im, None, timers=timers
             )
+        print('cls_keyps: {}'.format(cls_keyps))
+        boxes, segms, keypoints, classes = convert_from_cls_format(cls_boxes, cls_segms, cls_keyps)
+        print('classes:{}'.format(classes))
+        jsonboxes_perimage={
+            'boxes': boxes,
+            #'segms': segms,
+            #'keyps': cls_keyps,
+            #'keypoints': keypoints,
+            'classes': classes,
+            'image_id': int(image_name),
+            'file_name': file_name
+        }
+        print(jsonboxes_perimage['boxes'])
+        jsonboxes_perimage['boxes'] = jsonboxes_perimage['boxes'].tolist()
+        jsonboxes.append(jsonboxes_perimage)
+        print(jsonboxes)
+
         logger.info('Inference time: {:.3f}s'.format(time.time() - t))
         for k, v in timers.items():
             logger.info(' | {}: {:.3f}s'.format(k, v.average_time))
@@ -176,6 +203,11 @@ def main(args):
             ext=args.output_ext,
             out_when_no_box=args.out_when_no_box
         )
+
+    direction='/home/tecnimaq/Gabriela/Detectron/json_dump'
+    jsonboxesfile='jsonboxes_Dataset_4.json'
+    with open(os.path.join(direction,jsonboxesfile),'w') as thisfile:
+        json.dump(jsonboxes, thisfile)
 
 
 if __name__ == '__main__':
